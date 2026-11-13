@@ -66,14 +66,14 @@ jobs:
         if: steps.detect.outputs.has_lockfile == 'true'
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: npm
 
       - name: Set up Node.js
         if: steps.detect.outputs.package_json == 'true' && steps.detect.outputs.has_lockfile != 'true'
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Install dependencies
         if: steps.detect.outputs.package_json == 'true'
