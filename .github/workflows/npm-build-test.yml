@@ -25,6 +25,7 @@ concurrency:
 jobs:
   validate:
     name: NPM Build and Test / validate
+    if: github.repository != 'cicd-demo-org/required-workflows'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:

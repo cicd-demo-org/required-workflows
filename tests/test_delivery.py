@@ -36,6 +36,18 @@ class DeliveryContractTests(unittest.TestCase):
         self.assertIn('test "$DEMO_MODE" = simulation', script)
         self.assertIn("SIMULATION ONLY", script)
 
+    def test_node_checks_are_scoped_to_consumer_repositories(self):
+        workflows = ROOT / ".github/workflows"
+        npm = yaml.load((workflows / "npm-build-test.yml").read_text(),
+                        Loader=yaml.BaseLoader)
+        codeql = yaml.load((workflows / "npm-codeql.yml").read_text(),
+                           Loader=yaml.BaseLoader)
+        self.assertIn("pull_request", npm["on"])
+        self.assertEqual(npm["jobs"]["validate"]["if"],
+                         "github.repository != 'cicd-demo-org/required-workflows'")
+        self.assertIn("workflow_call", codeql["on"])
+        self.assertNotIn("pull_request", codeql["on"])
+
 
 if __name__ == "__main__":
     unittest.main()
