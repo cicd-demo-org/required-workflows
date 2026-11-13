@@ -56,12 +56,6 @@ jobs:
               print(f"has_{name}={str(meaningful).lower()}")
           PYTHON
 
-      - name: Fail for missing package descriptor
-        if: steps.detect.outputs.package_json != 'true'
-        run: |
-          echo "This required npm workflow needs package.json at the repository root." >&2
-          exit 1
-
       - name: Set up Node.js with dependency cache
         if: steps.detect.outputs.has_lockfile == 'true'
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -108,7 +102,7 @@ jobs:
           {
             echo "## NPM Build and Test Summary"
             if [ "${{ steps.detect.outputs.package_json }}" != "true" ]; then
-              echo "- :x: Missing required \`package.json\`."
+              echo "- Skipped: no root \`package.json\`; this repository is not an npm project."
             else
               echo "- Dependencies: \`${{ steps.detect.outputs.has_lockfile == 'true' && 'npm ci' || 'npm install' }}\`."
               [ "${{ steps.detect.outputs.has_lockfile }}" = "true" ] || echo "- :warning: No supported lockfile; \`npm install\` is non-reproducible."
