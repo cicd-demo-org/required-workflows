@@ -1,0 +1,104 @@
+name: Simulated Node delivery
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: delivery-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci && npm run lint && npm test && npm run build
+      - name: Package demo build
+        run: |
+          set -euo pipefail
+          test -d dist
+          tar -czf "$RUNNER_TEMP/application.tar.gz" dist
+          cd "$RUNNER_TEMP"
+          sha256sum application.tar.gz > application.sha256
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: demo-build-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/application.tar.gz
+            ${{ runner.temp }}/application.sha256
+          if-no-files-found: error
+
+  simulated-integrations:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        adapter: [veracode-sast, veracode-sca, sonarqube, jfrog, test-case-management, change-request]
+    steps:
+      - name: Record simulated adapter result
+        env:
+          ADAPTER: ${{ matrix.adapter }}
+          DEMO_MODE: ${{ vars.DEMO_MODE }}
+        run: |
+          set -euo pipefail
+          test "$DEMO_MODE" = simulation || { echo "DEMO_MODE must be simulation." >&2; exit 1; }
+          echo "SIMULATION ONLY: $ADAPTER reported a synthetic pass; no external service was contacted."
+          echo "### Simulated $ADAPTER" >> "$GITHUB_STEP_SUMMARY"
+          echo "Synthetic pass only. This is not a security, quality, registry, QA, or change authorization." >> "$GITHUB_STEP_SUMMARY"
+
+  dev:
+    needs: simulated-integrations
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: dev
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: demo-build-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Verify and simulate dev deployment
+        run: |
+          set -euo pipefail
+          sha256sum --check application.sha256
+          echo "SIMULATION ONLY: dev deployment; no external system changed." >> "$GITHUB_STEP_SUMMARY"
+
+  test:
+    needs: dev
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: test
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: demo-build-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Verify and simulate test deployment and QA
+        run: |
+          set -euo pipefail
+          sha256sum --check application.sha256
+          echo "SIMULATION ONLY: test deployment and QA; no external system changed." >> "$GITHUB_STEP_SUMMARY"
+
+  prod:
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: prod
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: demo-build-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Verify and simulate production promotion
+        run: |
+          set -euo pipefail
+          sha256sum --check application.sha256
+          echo "SIMULATION ONLY: prod promotion; no external system changed." >> "$GITHUB_STEP_SUMMARY"

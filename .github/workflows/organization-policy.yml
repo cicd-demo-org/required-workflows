@@ -1,0 +1,74 @@
+name: Organization Policy
+
+on:
+  pull_request:
+  merge_group:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: organization-policy-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  secret-scan:
+    name: Organization Policy / secret-scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Scan for private keys and secret files
+        id: scan
+        run: |
+          set -euo pipefail
+
+          findings_file="$(mktemp)"
+
+          # Common private key / certificate header patterns.
+          key_pattern='-----BEGIN (RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY( BLOCK)?-----'
+
+          echo "Scanning tracked file contents for private key material..."
+          if git grep -I -n -E -e "$key_pattern" -- . > "$findings_file.contents" 2>/dev/null; then
+            cat "$findings_file.contents" >> "$findings_file"
+          fi
+
+          echo "Scanning tracked file names for common secret-file types..."
+          name_pattern='(^|/)(id_rsa|id_dsa|id_ecdsa|id_ed25519)($|\.)|\.(pem|pfx|p12|key|jks|keystore)$|(^|/)\.env(\..+)?$|(^|/)\.npmrc$|(^|/)\.pgpass$|(^|/)credentials\.json$|(^|/)\.aws/credentials$'
+          if git ls-files -z | grep -zE -i "$name_pattern" | tr '\0' '\n' > "$findings_file.names" 2>/dev/null; then
+            if [ -s "$findings_file.names" ]; then
+              echo "Suspicious secret-file names found:" >> "$findings_file"
+              cat "$findings_file.names" >> "$findings_file"
+            fi
+          fi
+
+          if [ -s "$findings_file" ]; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+            echo "---- Findings ----"
+            cat "$findings_file"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Fail on policy violation
+        if: steps.scan.outputs.found == 'true'
+        run: |
+          echo "Committed private keys or secret files were detected. See the job log and summary for details." >&2
+          exit 1
+
+      - name: Write summary
+        if: always()
+        run: |
+          {
+            echo "## Organization Policy Summary"
+            if [ "${{ steps.scan.outputs.found }}" == "true" ]; then
+              echo "- :x: Detected committed private keys or common secret files. Review the job log and remove/rotate the affected material."
+            else
+              echo "- :white_check_mark: No committed private keys or common secret files were detected."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

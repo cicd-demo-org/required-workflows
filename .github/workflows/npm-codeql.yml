@@ -1,0 +1,73 @@
+name: NPM CodeQL
+
+on:
+  workflow_call:
+  pull_request:
+    paths-ignore:
+      - '.github/**'
+      - 'candidate_controller/**'
+      - 'candidate_simulation/**'
+      - 'component_ci/**'
+      - 'contracts/**'
+      - 'production_simulation/**'
+      - 'tests/**'
+      - '*.md'
+      - '**/*.md'
+  merge_group:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: npm-codeql-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: NPM CodeQL / analyze
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Verify JavaScript or TypeScript project
+        id: detect
+        run: |
+          if [ -f package.json ] || find . -type d \( -name .git -o -name node_modules \) -prune -o \( -name '*.js' -o -name '*.jsx' -o -name '*.ts' -o -name '*.tsx' \) -print -quit | grep -q .; then
+            echo "has_project=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_project=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Fail for missing JavaScript or TypeScript project
+        if: steps.detect.outputs.has_project != 'true'
+        run: |
+          echo "This required NPM CodeQL workflow needs package.json or JavaScript/TypeScript source files." >&2
+          exit 1
+
+      - name: Initialize CodeQL
+        if: steps.detect.outputs.has_project == 'true'
+        uses: github/codeql-action/init@d6317709a54fd87078d323eeb0e48ec331c8e621 # v3
+        with:
+          languages: javascript-typescript
+          build-mode: none
+
+      - name: Perform CodeQL analysis
+        if: steps.detect.outputs.has_project == 'true'
+        uses: github/codeql-action/analyze@d6317709a54fd87078d323eeb0e48ec331c8e621 # v3
+        with:
+          category: /language:javascript-typescript
+
+      - name: Write summary
+        if: always()
+        run: |
+          {
+            echo "## NPM CodeQL Summary"
+            if [ "${{ steps.detect.outputs.has_project }}" = "true" ]; then echo "- Ran JavaScript/TypeScript CodeQL analysis (build mode \`none\`)."; else echo "- :x: Missing JavaScript/TypeScript source or project descriptor."; fi
+          } >> "$GITHUB_STEP_SUMMARY"
