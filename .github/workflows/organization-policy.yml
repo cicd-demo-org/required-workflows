@@ -34,16 +34,30 @@ jobs:
           key_pattern='-----BEGIN (RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY( BLOCK)?-----'
 
           echo "Scanning tracked file contents for private key material..."
-          if git grep -I -n -E -e "$key_pattern" -- . > "$findings_file.contents" 2>/dev/null; then
+          if git grep -I -l -E -e "$key_pattern" -- . > "$findings_file.contents"; then
+            echo "Files containing private key headers:" >> "$findings_file"
             cat "$findings_file.contents" >> "$findings_file"
+          else
+            status=$?
+            if [ "$status" -ne 1 ]; then
+              echo "Private key scan failed with status $status." >&2
+              exit "$status"
+            fi
           fi
 
           echo "Scanning tracked file names for common secret-file types..."
           name_pattern='(^|/)(id_rsa|id_dsa|id_ecdsa|id_ed25519)($|\.)|\.(pem|pfx|p12|key|jks|keystore)$|(^|/)\.env(\..+)?$|(^|/)\.npmrc$|(^|/)\.pgpass$|(^|/)credentials\.json$|(^|/)\.aws/credentials$'
-          if git ls-files -z | grep -zE -i "$name_pattern" | tr '\0' '\n' > "$findings_file.names" 2>/dev/null; then
+          git ls-files -z > "$findings_file.tracked"
+          if grep -zE -i "$name_pattern" "$findings_file.tracked" | tr '\0' '\n' > "$findings_file.names"; then
             if [ -s "$findings_file.names" ]; then
               echo "Suspicious secret-file names found:" >> "$findings_file"
               cat "$findings_file.names" >> "$findings_file"
+            fi
+          else
+            status=$?
+            if [ "$status" -ne 1 ]; then
+              echo "Secret filename scan failed with status $status." >&2
+              exit "$status"
             fi
           fi
 
@@ -66,7 +80,9 @@ jobs:
         run: |
           {
             echo "## Organization Policy Summary"
-            if [ "${{ steps.scan.outputs.found }}" == "true" ]; then
+            if [ "${{ steps.scan.outcome }}" != "success" ]; then
+              echo "- :x: Policy scan did not complete successfully."
+            elif [ "${{ steps.scan.outputs.found }}" == "true" ]; then
               echo "- :x: Detected committed private keys or common secret files. Review the job log and remove/rotate the affected material."
             else
               echo "- :white_check_mark: No committed private keys or common secret files were detected."
