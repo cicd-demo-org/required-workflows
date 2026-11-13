@@ -2,17 +2,6 @@ name: NPM CodeQL
 
 on:
   workflow_call:
-  pull_request:
-    paths-ignore:
-      - '.github/**'
-      - 'candidate_controller/**'
-      - 'candidate_simulation/**'
-      - 'component_ci/**'
-      - 'contracts/**'
-      - 'production_simulation/**'
-      - 'tests/**'
-      - '*.md'
-      - '**/*.md'
   merge_group:
   workflow_dispatch:
 

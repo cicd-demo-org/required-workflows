@@ -5,6 +5,11 @@ This repository contains the shared Node.js checks and a simulated delivery pipe
 organization ruleset. CodeQL is called by the application as a normal reusable
 workflow: CodeQL analysis is not supported as a ruleset-required workflow.
 
+The npm job skips in this shared-workflows repository, which is not a Node.js
+application; it still runs in consumer repositories. When reproducing this setup
+in your organization, update the repository name in that job's condition to
+match your shared-workflows repository.
+
 The delivery pipeline builds once, records **synthetic** vendor/QA/change
 results, verifies the same build checksum at each stage, and simulates deployment
 to `dev`, `test`, and `prod`. No vendor or deployment API is contacted. A green
