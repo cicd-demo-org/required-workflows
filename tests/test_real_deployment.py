@@ -17,6 +17,7 @@ class RealDeploymentTests(unittest.TestCase):
         self.directory = pathlib.Path(self.temp.name)
         self.trace = self.directory / "trace"
         self.executable("gh", """#!/bin/bash
+echo "gh $*" >> "$TRACE"
 if [ "$1" = api ]; then echo "${FAKE_PROTECTED:-true}"; exit 0; fi
 if [ "$1" = attestation ]; then exit "${FAKE_ATTEST_STATUS:-0}"; fi
 exit 2
@@ -32,7 +33,7 @@ case "$1" in
   pull|stop|start|rename|rm) exit 0;;
   container) printf '%s\\n' "${FAKE_NAMES:-}";;
   inspect) case "$3" in
-    *demo.repository*) echo "$GITHUB_REPOSITORY";;
+    *demo.repository*) echo "${FAKE_OWNER:-$GITHUB_REPOSITORY}";;
     *) echo true;;
   esac;;
   run)
@@ -71,7 +72,13 @@ esac
             with self.subTest(overrides=overrides):
                 result, trace = self.run_deploy(**overrides)
                 self.assertNotEqual(result.returncode, 0)
-                self.assertEqual(trace, "")
+                self.assertNotIn("login ", trace)
+                self.assertNotIn("run ", trace)
+
+    def test_bad_digest_rejected_without_registry_or_host_changes(self):
+        result, trace = self.run_deploy(IMAGE_DIGEST="sha256:not-a-digest")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(trace, "")
 
     def test_bad_attestation_cannot_start_container(self):
         result, trace = self.run_deploy(FAKE_ATTEST_STATUS="1")
@@ -92,6 +99,16 @@ esac
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("run -d", trace)
         self.assertNotIn("rm -f", trace)
+        self.assertIn("--signer-workflow example/nodejs-demo-app/.github/workflows/publish-image.yml", trace)
+        self.assertIn("--source-ref refs/heads/main", trace)
+        self.assertIn("--source-digest " + "b" * 40, trace)
+        self.assertIn("--deny-self-hosted-runners", trace)
+
+    def test_unrelated_container_is_never_replaced(self):
+        result, trace = self.run_deploy(FAKE_NAMES="nodejs-demo-app", FAKE_OWNER="other/repo")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn("stop ", trace)
+        self.assertNotIn("run ", trace)
 
     def test_deployment_requires_manual_call_and_environment(self):
         workflow = yaml.load(
